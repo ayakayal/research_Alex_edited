@@ -1,0 +1,6 @@
+reformat the results 
+- present it in more informative way 
+- 
+
+design decision
+- plot the tradeoff between the decisons that were made
