@@ -71,7 +71,7 @@ class DQN_Agent:
         self.score = 0
         self.intrinsic_score = 0
         self.epsilon=[]
- 
+    
     def train(self,num_episodes):
         #hyperparamters
         batch_size = 64 # How many experiences to use for each training step.
@@ -82,7 +82,7 @@ class DQN_Agent:
         #anneling_steps = num_episodes * self.env.max_episode_steps #3000 # How many steps of training to reduce startE to endE.
         anneling_episodes= num_episodes
         num_episodes = num_episodes #000 #1000 How many episodes of game environment to train network with.
-        pre_train_steps = 0 #50#500 # How many steps of random actions before training begins.
+        pre_train_steps = 0 #500 # How many steps of random actions before training begins.
         model_path = "./models4/dqn" # The path to save our model to.
         summary_path = './summaries4/dqn' # The path to save summary statistics to.
         h_size = 256 # The number of units in the hidden layer.
@@ -143,26 +143,36 @@ class DQN_Agent:
                 episode_reward = 0
                 episode_steps = 0
         
-                
+                #print('dictionary initial',self.state_action_freq)
                 while not done and episode_steps< self.env.max_episode_steps:
                     episode_steps+=1
                     self.epsilon.append(e)
                     # Choose an action by greedily (with e chance of random action) from the Q-network
-                    if (np.random.rand(1) < e or total_steps < pre_train_steps) and train_model:
+                    if (total_steps < pre_train_steps) and train_model:
                         action = np.random.randint(0,action_space_size)
                     else:
-                        action = sess.run(mainQN.predict, 
+                        Q_values = sess.run(mainQN.q_out, 
                                         feed_dict={mainQN.observation_input:[observation]})[0]
-                        
+                        #print('Q values ',Q_values)
+                        Bonuses=np.zeros(self.env.actions_n)
+                        for action in range(self.env.actions_n):
+                            Bonuses[action] = self.reward_calc(self.intrinsic_reward, self.state_action_freq[tuple ([observation,action])], episode_steps, alg='MBIE-EB')
+                        #print('dictionary ',self.state_action_freq)
+                        #print('Bonuses ',Bonuses)
+                        totalQ= Q_values+Bonuses
+                        #print('total Q ',totalQ)
+                        action=np.argmax(totalQ)
+                        #print('action ',action)
                     if not train_model and np.random.rand(1) < 0.1:
                         action = np.random.randint(0,action_space_size)
+                    self.state_action_freq[tuple([observation,action])] += 1
                     observation_1, reward, done, _= self.env.step(self.env.actions[action])
-                    self.state_freq[observation_1] += 1                        
+                    self.state_freq[observation_1] += 1                                           
                     total_steps += 1
                     
                     # Save the experience to our episode buffer.
                     episodeBuffer.add(np.reshape(np.array([observation,action,reward,observation_1,done]),[1,5])) 
-                    #print('experience ',np.reshape(np.array([observation,action,reward,observation_1,done]),[1,5]))
+                    #print('episode buffer', episodeBuffer.buffer)
                     if total_steps > pre_train_steps and train_model:
                         if total_steps % 1000 == 0: #It was 1000 steps
                             sess.run(update_target_ops)
@@ -208,4 +218,14 @@ class DQN_Agent:
                     print("Saved Model")
                 if i % 10 == 0 and i != 0:
                     print ("Mean Reward: {}".format(np.mean(episode_rewards[-50:])))
+    @staticmethod
+    def reward_calc(base_reward, freq, t, alg='UCB'):
+        if alg == 'UCB':
+            return base_reward * np.sqrt(2 * np.log(t) / freq)
+        if alg == 'MBIE-EB':
+            return base_reward * np.sqrt(1 / freq)
+        if alg == 'BEB':
+            return base_reward / freq
+        if alg == 'BEB-SQ':
+            return base_reward / freq**2
 
